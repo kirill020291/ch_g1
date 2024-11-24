@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Chess Game</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #status {
+            margin: 10px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        #board {
+            width: 400px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Online Chess Game</h1>
+    <div id="status">Waiting for an opponent...</div>
+    <div id="board"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+    <script>
+        const boardElement = document.getElementById('board');
+        const statusElement = document.getElementById('status');
+        const socket = io('https://620c-95-24-130-94.ngrok-free.app'); // Ваш сервер
+
+        const game = new Chess(); // Логика шахмат
+        let board; // Интерфейс доски
+        let roomId = null; // Комната для игры
+        let isPlayerTurn = false;
+
+        // Инициализация шахматной доски
+        function initBoard() {
+            board = Chessboard('board', {
+                draggable: true,
+                position: 'start',
+                onDrop: handleMove,
+            });
+        }
+
+        // Обработка хода
+        function handleMove(source, target) {
+            if (!isPlayerTurn) {
+                alert("Не ваш ход!");
+                return 'snapback';
+            }
+
+            const move = game.move({
+                from: source,
+                to: target,
+                promotion: 'q', // Всегда превращаем в ферзя
+            });
+
+            if (move === null) {
+                alert("Недопустимый ход!");
+                return 'snapback';
+            }
+
+            socket.emit('move', { roomId, move });
+            isPlayerTurn = false;
+            updateStatus();
+        }
+
+        // Обновление статуса игры
+        function updateStatus() {
+            if (game.in_checkmate()) {
+                statusElement.textContent = "Мат! Игра окончена.";
+            } else if (game.in_draw()) {
+                statusElement.textContent = "Ничья!";
+            } else {
+                statusElement.textContent = isPlayerTurn ? "Ваш ход!" : "Ход противника...";
+            }
+        }
+
+        // Обработка событий WebSocket
+        socket.on('connect', () => {
+            roomId = prompt("Введите номер комнаты или создайте новую:");
+            socket.emit('join_game', { roomId });
+            statusElement.textContent = "Ожидаем второго игрока...";
+        });
+
+        socket.on('game_start', () => {
+            isPlayerTurn = game.turn() === 'w'; // Белые ходят первыми
+            updateStatus();
+        });
+
+        socket.on('update_board', (data) => {
+            const { move } = data;
+            game.move(move);
+            board.position(game.fen());
+            isPlayerTurn = true;
+            updateStatus();
+        });
+
+        socket.on('message', (message) => {
+            statusElement.textContent = message;
+        });
+
+        initBoard();
+    </script>
+</body>
+</html>
